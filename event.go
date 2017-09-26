@@ -1,16 +1,15 @@
 package zoneminder
 
 import (
-	"encoding/json"
 	"fmt"
-	"io/ioutil"
-	"net/http"
 	"strings"
 	"time"
 )
 
-const eventsURL = "/api/events.json"
-const eventCountURL = "/api/events/consoleEvents/"
+const (
+	eventsURL     = "/api/events"
+	eventCountURL = "/api/events/consoleEvents/"
+)
 
 type events struct {
 	Events []eventsPlaceHolder
@@ -37,6 +36,7 @@ func (d *date) UnmarshalJSON(b []byte) error {
 
 // Event is an event sent back from zoneminder
 type Event struct {
+	*Client
 	ID          int `json:",string"`
 	MonitorID   int `json:",string"`
 	Name        string
@@ -60,24 +60,30 @@ type Event struct {
 	Notes       string
 }
 
-func getEvents(c *Client) ([]Event, error) {
-	client := &http.Client{Jar: c.Cookies}
-	resp, err := client.Get(fmt.Sprintf("%s%s", c.Host, eventsURL))
+func (c *Client) GetEvents() ([]Event, error) {
+	eventResponse, err := c.httpGet(fmt.Sprintf("%s.json", eventsURL), new(events))
 	if err != nil {
 		return []Event{}, err
 	}
 
-	b, _ := ioutil.ReadAll(resp.Body)
-	var eventresponse events
-	err = json.Unmarshal(b, &eventresponse)
+	e := make([]Event, 0)
+	for _, event := range eventResponse.(*events).Events {
+		event.Event.Client = c
+		e = append(e, event.Event)
+	}
+
+	return e, nil
+}
+
+func (c *Client) GetEventById(ID int) (Event, error) {
+	event, err := c.httpGet(fmt.Sprintf("%s%d.json", eventsURL, ID), new(Event))
 	if err != nil {
-		return []Event{}, err
+		return Event{}, err
 	}
 
-	events := make([]Event, 0)
-	for _, event := range eventresponse.Events {
-		events = append(events, event.Event)
-	}
+	return event.(Event), nil
+}
 
-	return events, nil
+func (e Event) Refresh() (Event, error) {
+	return e.Client.GetEventById(e.ID)
 }

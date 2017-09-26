@@ -27,13 +27,3 @@ func NewClient(host, username, password string) (*Client, error) {
 	}
 	return client, nil
 }
-
-// GetMonitors returns a list of monitors from zoneminder
-func (c *Client) GetMonitors() ([]Monitor, error) {
-	return getMonitors(c)
-}
-
-// GetEvents returns a list of events from zoneminder
-func (c *Client) GetEvents() ([]Event, error) {
-	return getEvents(c)
-}
