@@ -7,7 +7,7 @@ import (
 )
 
 // Version of the package
-const Version = 0.1
+const Version = 0.7
 
 // Client is the api client used for communicating with the zoneminder API
 type Client struct {
