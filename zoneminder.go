@@ -3,6 +3,7 @@ package zoneminder
 import (
 	"fmt"
 	"net/http/cookiejar"
+	"time"
 )
 
 // Version of the package
@@ -10,8 +11,14 @@ const Version = 0.1
 
 // Client is the api client used for communicating with the zoneminder API
 type Client struct {
-	Host    string
-	Cookies *cookiejar.Jar
+	Host          string
+	Cookies       *cookiejar.Jar
+	eventMonitorT *time.Ticker
+}
+
+type Collection interface {
+	GetByID(id int)
+	GetByName(name string)
 }
 
 // NewClient creates the remote client for api communication to zoneminder.

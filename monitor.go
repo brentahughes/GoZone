@@ -2,10 +2,14 @@ package zoneminder
 
 import (
 	"fmt"
+	"log"
 	"reflect"
+	"time"
 )
 
 const monitorURL = "/api/monitors"
+
+type Monitors []Monitor
 
 type monitors struct {
 	Monitors []monitorPlaceHolder
@@ -88,6 +92,7 @@ type Monitor struct {
 	WebColour           string
 	Exif                bool
 	Sequence            int `json:",string"`
+	eventMonitorT       *time.Ticker
 }
 
 type MonitorOpts struct {
@@ -103,14 +108,33 @@ type MonitorOpts struct {
 	Colours  int
 }
 
-func (c *Client) GetMonitors() ([]Monitor, error) {
-	monitorResponse, err := c.httpGet(fmt.Sprintf("%s.json", monitorURL), new(monitors))
-	if err != nil {
-		return []Monitor{}, err
+func (m *Monitors) GetByID(id int) Monitor {
+	for _, mon := range *m {
+		if mon.ID == id {
+			return mon
+		}
 	}
 
-	m := make([]Monitor, 0)
+	return Monitor{}
+}
 
+func (m *Monitors) GetByName(name string) Monitor {
+	for _, mon := range *m {
+		if mon.Name == name {
+			return mon
+		}
+	}
+
+	return Monitor{}
+}
+
+func (c *Client) GetMonitors() (Monitors, error) {
+	monitorResponse, err := c.httpGet(fmt.Sprintf("%s.json", monitorURL), new(monitors))
+	if err != nil {
+		return Monitors{}, err
+	}
+
+	m := make(Monitors, len(monitorResponse.(*monitors).Monitors))
 	for _, monitor := range monitorResponse.(*monitors).Monitors {
 		monitor.Monitor.Client = c
 		m = append(m, monitor.Monitor)
@@ -128,11 +152,11 @@ func (c *Client) GetMonitorById(ID int) (Monitor, error) {
 	return monitor.(Monitor), nil
 }
 
-func (m Monitor) Refresh() (Monitor, error) {
+func (m *Monitor) Refresh() (Monitor, error) {
 	return m.Client.GetMonitorById(m.ID)
 }
 
-func (m Monitor) Enable() error {
+func (m *Monitor) Enable() error {
 	postData := map[string]string{
 		"Monitor[Enabled]": "1",
 	}
@@ -141,7 +165,7 @@ func (m Monitor) Enable() error {
 	return err
 }
 
-func (m Monitor) Disable() error {
+func (m *Monitor) Disable() error {
 	postData := map[string]string{
 		"Monitor[Enabled]": "0",
 	}
@@ -150,29 +174,7 @@ func (m Monitor) Disable() error {
 	return err
 }
 
-func isValidFunction(f string) bool {
-	validFunctions := []string{
-		"Monitor",
-		"Modect",
-		"Record",
-		"Mocord",
-		"Nodect",
-	}
-
-	for _, v := range validFunctions {
-		if v == f {
-			return true
-		}
-	}
-
-	return false
-}
-
-func (m Monitor) SetFunction(f string) error {
-	if isValidFunction(f) == false {
-		return fmt.Errorf("%s is not a valid function", f)
-	}
-
+func (m *Monitor) SetFunction(f string) error {
 	postData := map[string]string{
 		"Monitor[Function]": f,
 	}
@@ -182,10 +184,6 @@ func (m Monitor) SetFunction(f string) error {
 }
 
 func (c *Client) AddMonitor(opts MonitorOpts) (Monitor, error) {
-	if isValidFunction(opts.Function) == false {
-		return Monitor{}, fmt.Errorf("%s is not a valid function", opts.Function)
-	}
-
 	postData := make(map[string]string)
 
 	v := reflect.ValueOf(opts).Elem()
@@ -204,7 +202,7 @@ func (c *Client) AddMonitor(opts MonitorOpts) (Monitor, error) {
 	return Monitor{}, err
 }
 
-func (m Monitor) Edit(opts MonitorOpts) error {
+func (m *Monitor) Edit(opts MonitorOpts) error {
 	postData := make(map[string]string)
 
 	v := reflect.ValueOf(opts).Elem()
@@ -222,20 +220,56 @@ func (m Monitor) Edit(opts MonitorOpts) error {
 	return err
 }
 
-func (m Monitor) ForceAlarm() error {
+func (m *Monitor) ForceAlarm() error {
 	_, err := m.Client.httpGet(fmt.Sprintf("%s/alarm/id:%d/command:on.json", monitorURL, m.ID), nil)
 	return err
 }
 
-func (m Monitor) StopAlarm() error {
+func (m *Monitor) StopAlarm() error {
 	_, err := m.Client.httpGet(fmt.Sprintf("%s/alarm/id:%d/command:off.json", monitorURL, m.ID), nil)
 	return err
 }
 
-func (m Monitor) AlarmStatus() (int, error) {
+func (m *Monitor) AlarmStatus() (int, error) {
 	type status struct {
 		Status int `json:"status,string"`
 	}
 	s, err := m.Client.httpGet(fmt.Sprintf("%s/alarm/id:%d/command:status.json", monitorURL, m.ID), new(status))
 	return s.(*status).Status, err
+}
+
+func (m *Monitor) GetEvents(opts *EventOpts) (Events, error) {
+	if opts == nil {
+		opts = &EventOpts{}
+	}
+
+	opts.MonitorID = m.ID
+	return m.Client.GetEvents(opts)
+}
+
+func (m *Monitor) MonitorForEvents(eventType string, interval int, eventChan chan Events) {
+	m.eventMonitorT = time.NewTicker(time.Duration(interval) * time.Second)
+	go func() {
+		for range m.eventMonitorT.C {
+			events, err := m.GetEvents(&EventOpts{
+				Cause:              eventType,
+				StartTime:          time.Now().Add(-time.Duration(interval) * time.Second),
+				StartTimeOperation: ">=",
+			})
+			if err != nil {
+				log.Println("Error getting events for monitor.", err)
+				continue
+			}
+
+			eventChan <- events
+		}
+	}()
+}
+
+func (m *Monitor) StopEventMonitoring() {
+	if m.eventMonitorT != nil {
+		m.eventMonitorT.Stop()
+	} else {
+		log.Println("No event monitor currently running")
+	}
 }

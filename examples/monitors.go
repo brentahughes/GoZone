@@ -1,8 +1,8 @@
 package main
 
 import (
-	"fmt"
 	"log"
+	"time"
 
 	zoneminder "github.com/bah2830/GoZone"
 )
@@ -18,5 +18,19 @@ func main() {
 		log.Fatal(err)
 	}
 
-	fmt.Printf("\n%+v\n", monitors)
+	eventChan := make(chan zoneminder.Events)
+	m := monitors.GetByID(1)
+	m.MonitorForEvents("Motion", 5, eventChan)
+
+	for {
+		select {
+		case e := <-eventChan:
+			log.Printf("\n%+v", e)
+		default:
+			time.Sleep(30 * time.Second)
+			m.StopEventMonitoring()
+			return
+		}
+	}
+
 }

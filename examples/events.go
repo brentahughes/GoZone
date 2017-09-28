@@ -13,10 +13,13 @@ func main() {
 		log.Fatal(err)
 	}
 
-	events, err := client.GetEvents()
+	events, err := client.GetEvents(&zoneminder.EventOpts{Cause: "Motion"})
 	if err != nil {
 		log.Fatal(err)
 	}
 
-	fmt.Printf("\n%+v\n", events)
+	for _, e := range events {
+		fmt.Printf("%s - %s: %s\n", e.StartTime.String(), e.Name, e.Cause)
+	}
+
 }
